@@ -3,11 +3,30 @@ Dark Vessel Service - Core logic for detecting and analyzing dark vessels.
 Combines SAR detections with AIS gap events.
 """
 import logging
+import os
 import time
 import json
 import math
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
+
+
+def _sar_report_chunk_days() -> int:
+    """Wider windows = fewer GFW /4wings/report calls (default 56d ≈ 6–7 chunks/year vs 13×30d)."""
+    try:
+        d = int(os.environ.get("GFW_SAR_CHUNK_DAYS", "56"))
+    except ValueError:
+        d = 56
+    return max(14, min(d, 90))
+
+
+def _sar_report_sleep_s() -> float:
+    """Pause between report calls to reduce 429s; lower = faster (default 0.2s was 1.0s)."""
+    try:
+        s = float(os.environ.get("GFW_REPORT_SLEEP_S", "0.2"))
+    except ValueError:
+        s = 0.2
+    return max(0.0, min(s, 2.0))
 
 
 class DarkVesselService:
@@ -57,7 +76,7 @@ class DarkVesselService:
         """
         Get dark vessels: SAR detections (matched=false) + AIS gap events.
 
-        Automatically chunks date ranges > 30 days into 30-day chunks to avoid API limits.
+        Long ranges are split with chunk size ``GFW_SAR_CHUNK_DAYS`` (default 56) to limit GFW load.
 
         When the v4 SAR report returns no lat/lon rows, optional MVT harvesting fetches
         4Wings heatmap tiles (format=MVT) over each EEZ bbox and uses cell centroids as points.
@@ -66,15 +85,19 @@ class DarkVesselService:
         """
         results = {"sar_detections": [], "summary": {}}
         
-        # Check if date range needs chunking (> 30 days)
+        chunk_days = _sar_report_chunk_days()
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
         days_diff = (end - start).days + 1
-        
-        if days_diff > 30:
-            logging.info(f"Date range ({days_diff} days) exceeds 30 days, splitting into chunks")
-            date_chunks = self._split_date_range(start_date, end_date, chunk_days=30)
-            logging.info(f"Split into {len(date_chunks)} chunks: {date_chunks}")
+
+        if days_diff > chunk_days:
+            logging.info(
+                "Date range (%s days) exceeds chunk size (%s), splitting into chunks",
+                days_diff,
+                chunk_days,
+            )
+            date_chunks = self._split_date_range(start_date, end_date, chunk_days=chunk_days)
+            logging.info("Split into %s chunks", len(date_chunks))
         else:
             date_chunks = [(start_date, end_date)]
         
@@ -291,14 +314,16 @@ class DarkVesselService:
         to ``summary.total_detections`` only. Legacy responses with ``lat``/``lon`` still map normally.
         """
         # Split range to avoid API limits/timeouts
+        chunk_days = _sar_report_chunk_days()
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
         days_diff = (end - start).days + 1
         date_chunks = (
-            self._split_date_range(start_date, end_date, chunk_days=30)
-            if days_diff > 30
+            self._split_date_range(start_date, end_date, chunk_days=chunk_days)
+            if days_diff > chunk_days
             else [(start_date, end_date)]
         )
+        sleep_s = _sar_report_sleep_s()
 
         # Per GFW API docs for reports: use quoted string, not boolean
         filters = None
@@ -314,8 +339,8 @@ class DarkVesselService:
         for i, eez_id in enumerate(eez_ids):
             for chunk_idx, (chunk_start, chunk_end) in enumerate(date_chunks):
                 try:
-                    if i > 0 or chunk_idx > 0:
-                        time.sleep(1.0)
+                    if (i > 0 or chunk_idx > 0) and sleep_s > 0:
+                        time.sleep(sleep_s)
 
                     logging.info(
                         f"Fetching SAR presence for EEZ {eez_id}, chunk {chunk_start} to {chunk_end}, matched={matched}"

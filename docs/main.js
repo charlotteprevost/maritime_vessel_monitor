@@ -154,6 +154,13 @@ function setPanelOpen(panel, open) {
     btn.setAttribute('aria-expanded', 'true');
     otherBtn?.setAttribute('aria-expanded', 'false');
     el.setAttribute('aria-hidden', 'false');
+    if (otherEl && document.activeElement && otherEl.contains(document.activeElement)) {
+      try {
+        btn.focus({ preventScroll: true });
+      } catch {
+        /* ignore */
+      }
+    }
     otherEl?.setAttribute('aria-hidden', 'true');
     document.body.classList.add('panels-open');
     backdrop?.setAttribute('aria-hidden', 'false');
@@ -171,6 +178,13 @@ function setPanelOpen(panel, open) {
   } else {
     document.body.classList.remove(isFilters ? 'filters-open' : 'info-open');
     btn.setAttribute('aria-expanded', 'false');
+    if (document.activeElement && el.contains(document.activeElement)) {
+      try {
+        btn.focus({ preventScroll: true });
+      } catch {
+        /* ignore */
+      }
+    }
     el.setAttribute('aria-hidden', 'true');
     const anyOpen = document.body.classList.contains('filters-open') || document.body.classList.contains('info-open');
     document.body.classList.toggle('panels-open', anyOpen);
@@ -1846,7 +1860,9 @@ async function applyFilters() {
   const start = new Date(startDate);
   const end = new Date(endDate);
   const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-  const totalChunks = Math.ceil(totalDays / 30); // Backend chunks into 30-day pieces
+  /** Keep in sync with backend default GFW_SAR_CHUNK_DAYS (56). */
+  const SAR_CHUNK_DAYS = 56;
+  const totalChunks = Math.ceil(totalDays / SAR_CHUNK_DAYS);
   const selectedEEZCount = selectedEEZs.length;
 
   // Estimate total time: ~2-3 seconds per chunk per EEZ (conservative estimate)
@@ -1927,6 +1943,8 @@ async function applyFilters() {
       interval: 'DAY',
       temporal_aggregation: 'false',
       matched: 'false', // Dark vessels only
+      // Extra per-EEZ summary pass duplicates GFW reports; skip on long ranges to save N upstream calls.
+      include_eez_summaries: totalDays > 120 ? 'false' : 'true',
       max_mvt_tiles: '24',
       interaction_enrichment: 'true',
       max_interaction_cells: '40',
@@ -2088,7 +2106,8 @@ function buildSarHeatmapTileLayer(urlTemplate) {
     opacity: 0.72,
     maxZoom: 18,
     maxNativeZoom: 12,
-    crossOrigin: true,
+    // Default (no CORS mode): tiles paint without ACAO. crossOrigin:true breaks when the CDN
+    // returns 502/503 HTML without CORS headers (browser reports CORS + hides the image).
     detectRetina: false,
     className: 'ms-sar-heatmap-layer'
   });
@@ -3230,7 +3249,8 @@ function showEventsPopup(lat, lng, eventsData) {
 async function updateSummaryStats(summaries, darkVessels, batchStats = null) {
   const summarySection = document.getElementById('summary-stats');
 
-  if (!summaries || summaries.length === 0) {
+  const hasDv = darkVessels?.summary && Object.keys(darkVessels.summary).length > 0;
+  if ((!summaries || summaries.length === 0) && !hasDv) {
     summarySection?.classList.add('hidden');
     setStatsLoading(false);
     return;
@@ -3526,8 +3546,7 @@ function setupLegend() {
             </tr>
             <tr id="legend-detail-sar" class="legend-detail-row" aria-hidden="true">
               <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-cell">
+              <td class="legend-detail-cell" colspan="2">
                 <div class="legend-detail-panel">
                   SAR detections are vessels seen in satellite radar imagery (Sentinel‑1) that were not matched to AIS at the time of the overpass.
                 </div>
@@ -3551,8 +3570,7 @@ function setupLegend() {
             </tr>
             <tr id="legend-detail-clusters" class="legend-detail-row" aria-hidden="true">
               <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-cell">
+              <td class="legend-detail-cell" colspan="2">
                 <div class="legend-detail-panel">
                   Clusters need SAR rows with coordinates. When GFW returns counts only (common for v4), this stays at 0 even if the heatmap shows activity. Labels indicate relative risk when clusters exist.
                 </div>
@@ -3582,8 +3600,7 @@ function setupLegend() {
             </tr>
             <tr id="legend-detail-routes" class="legend-detail-row" aria-hidden="true">
               <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-cell">
+              <td class="legend-detail-cell" colspan="2">
                 <div class="legend-detail-panel">
                   Routes are built from coordinate SAR points. No points means no lines—this is expected with aggregated API data; use the orange heat layer for spatial context.
                 </div>
@@ -3605,8 +3622,7 @@ function setupLegend() {
             </tr>
             <tr id="legend-detail-eez" class="legend-detail-row" aria-hidden="true">
               <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-pad" aria-hidden="true"></td>
-              <td class="legend-detail-cell">
+              <td class="legend-detail-cell" colspan="2">
                 <div class="legend-detail-panel">
                   EEZ boundaries are displayed for the selected zones to provide geographic context for detections, clusters, and routes.
                 </div>

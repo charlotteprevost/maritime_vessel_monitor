@@ -226,50 +226,58 @@ def get_detections():
         )
         logging.info(f"Dark vessels fetched: {dark_vessels.get('summary', {})}")
 
-        # Get SAR summaries per EEZ (skip if filters_str contains matched filter - API has issues)
-        # Note: Summaries are optional and failures won't block the response
-        # API has a 366-day limit, so we need to chunk the date range for summaries too
+        # Optional extra per-EEZ summary reports (duplicate upstream work vs get_sar_presence).
+        # For long ranges + multiple EEZs, skip by default or via ?include_eez_summaries=false to save N API calls.
+        include_eez_summaries = request.args.get("include_eez_summaries", "true").lower() == "true"
         summaries = []
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
         days_diff = (end - start).days + 1
-        
-        if days_diff > 366:
-            # Chunk summaries into 365-day chunks (API max is 366)
-            from datetime import timedelta
-            summary_chunks = []
-            current_start = start
-            while current_start < end:
-                current_end = min(current_start + timedelta(days=365), end)
-                summary_chunks.append((
-                    current_start.strftime("%Y-%m-%d"),
-                    current_end.strftime("%Y-%m-%d")
-                ))
-                current_start = current_end + timedelta(days=1)
-        else:
-            summary_chunks = [(start_date, end_date)]
-        
-        for eez_id in eez_ids:
-            eez_summaries = []
-            for chunk_start, chunk_end in summary_chunks:
-                try:
-                    # Don't use matched filter in summary - API has type issues with boolean filters
-                    # We'll get all data and filter client-side if needed
-                    summary_filters = None if "matched" in filters_str else filters_str
-                    logging.info(f"Fetching summary for EEZ {eez_id}, chunk {chunk_start} to {chunk_end}")
-                    report = client.create_report(
-                        dataset=DATASETS["sar"],
-                        start_date=chunk_start,
-                        end_date=chunk_end,
-                        filters=summary_filters,
-                        eez_id=eez_id
+
+        if include_eez_summaries:
+            if days_diff > 366:
+                # Chunk summaries into 365-day chunks (API max is 366)
+                from datetime import timedelta
+
+                summary_chunks = []
+                current_start = start
+                while current_start < end:
+                    current_end = min(current_start + timedelta(days=365), end)
+                    summary_chunks.append(
+                        (
+                            current_start.strftime("%Y-%m-%d"),
+                            current_end.strftime("%Y-%m-%d"),
+                        )
                     )
-                    eez_summaries.append({"chunk": f"{chunk_start},{chunk_end}", "summary": report})
-                    logging.info(f"Summary fetched for EEZ {eez_id}, chunk {chunk_start} to {chunk_end}")
-                except Exception as e:
-                    logging.warning(f"Failed summary for EEZ {eez_id}, chunk {chunk_start} to {chunk_end}: {e}")
-                    eez_summaries.append({"chunk": f"{chunk_start},{chunk_end}", "error": str(e)})
-            summaries.append({"eez_id": eez_id, "chunks": eez_summaries})
+                    current_start = current_end + timedelta(days=1)
+            else:
+                summary_chunks = [(start_date, end_date)]
+
+            for eez_id in eez_ids:
+                eez_summaries = []
+                for chunk_start, chunk_end in summary_chunks:
+                    try:
+                        # Don't use matched filter in summary - API has type issues with boolean filters
+                        # We'll get all data and filter client-side if needed
+                        summary_filters = None if "matched" in filters_str else filters_str
+                        logging.info(f"Fetching summary for EEZ {eez_id}, chunk {chunk_start} to {chunk_end}")
+                        report = client.create_report(
+                            dataset=DATASETS["sar"],
+                            start_date=chunk_start,
+                            end_date=chunk_end,
+                            filters=summary_filters,
+                            eez_id=eez_id,
+                        )
+                        eez_summaries.append({"chunk": f"{chunk_start},{chunk_end}", "summary": report})
+                        logging.info(f"Summary fetched for EEZ {eez_id}, chunk {chunk_start} to {chunk_end}")
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed summary for EEZ {eez_id}, chunk {chunk_start} to {chunk_end}: {e}"
+                        )
+                        eez_summaries.append({"chunk": f"{chunk_start},{chunk_end}", "error": str(e)})
+                summaries.append({"eez_id": eez_id, "chunks": eez_summaries})
+        else:
+            logging.info("Skipping EEZ summary reports (include_eez_summaries=false)")
 
         # Use proxied tile URL instead of direct GFW URL (requires auth)
         # The frontend will request tiles through our backend proxy
