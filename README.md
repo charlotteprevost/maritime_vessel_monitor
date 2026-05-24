@@ -7,35 +7,82 @@ Explore potential non-cooperative maritime patterns using Global Fishing Watch S
 
 ## Portfolio quick view
 
-### Screenshots
+### Demo flow (recruiter / LinkedIn walkthrough)
+
+| Step | Time | Action | What to highlight |
+|------|------|--------|-------------------|
+| 1 | 5–8s | Open live demo landing | SAR map + EEZ context; “screening, not proof” |
+| 2 | 10–15s | Click **Try a demo** | Preset EEZ, date range, layers applied |
+| 3 | 10–15s | Toggle clusters + routes | Proximity heuristic + one analytics metric |
+| 4 | 8–12s | **Decision Output** panel | Preview table → export GeoJSON or CSV |
+| 5 | 8–12s | Mention engineering | Flask API, TTL cache, pytest, GitHub Pages deploy |
+| 6 | 5s | CTA | Live URL + GitHub + this README |
+
+### System architecture
+
+```mermaid
+flowchart TB
+  subgraph client [Browser · GitHub Pages]
+    UI[Leaflet frontend<br/>frontend/]
+  end
+  subgraph api [Flask backend]
+    R[detections · analytics · configs routes]
+    SVC[dark_vessel_service]
+    CACHE[TTL cache]
+    GFWC[gfw_client]
+  end
+  GFW[Global Fishing Watch API]
+  UI -->|GET /api/*| R
+  R --> SVC
+  R --> CACHE
+  SVC --> GFWC
+  GFWC --> GFW
+  TESTS[pytest · 53 passed] -.-> R
+```
+
+### Request path (one query)
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant FE as Frontend
+  participant API as Flask /api/detections
+  participant C as TTL cache
+  participant G as GFW API
+
+  U->>FE: EEZ + dates + layers
+  FE->>API: GET include_clusters, include_routes, include_stats
+  API->>C: cache lookup
+  alt cache miss
+    C->>G: chunked SAR fetch (30d windows)
+    G-->>API: detection features
+    API->>API: cluster BFS + route greedy link
+    API->>C: store TTL entry
+  end
+  API-->>FE: GeoJSON + stats JSON
+  FE-->>U: map layers + Decision Output table
+```
+
+### Stack & reliability
+
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| Frontend | Leaflet, vanilla JS, marker clustering | Static bundle in `frontend/` → `docs/` for Pages |
+| Backend | Flask, modular routes | Token stays server-side |
+| Data | GFW SAR presence + EEZ config | 30-day fetch chunking for long ranges |
+| Cache | In-memory TTL (`ttl_cache.py`) | Detections 5m · config 1h · EEZ 24h |
+| Tests | pytest | `53 passed, 6 skipped` locally |
+| Deploy | GitHub Pages + optional API host | `./scripts/sync_docs.sh` |
+
+### Screenshots (optional)
 
 ![Landing state and map](assets/screenshots/shot-1-landing.svg)
 ![Legend and analytics controls](assets/screenshots/shot-2-controls.svg)
 ![Decision output export panel](assets/screenshots/shot-4-output.svg)
 
-### 6-shot demo script (deterministic path)
-
-1. **Problem + map loaded (5–8s):** Open app landing state; title and legend visible.
-2. **Core controls (10–15s):** Click `Try a demo` to apply preset EEZ + date + layers.
-3. **Main insight (10–15s):** Highlight clusters/routes and one analytics metric.
-4. **Practical output (8–12s):** Use `Decision Output` panel to preview rows and export `GeoJSON`/`CSV`.
-5. **Engineering credibility (8–12s):** Mention frontend/backend split, cache, and tests.
-6. **CTA (5s):** End on live demo + GitHub + README.
-
-### Architecture & reliability
-
-```mermaid
-flowchart LR
-  FE[Frontend Leaflet App] --> API[Flask API]
-  API --> GFW[Global Fishing Watch API]
-  API --> CACHE[TTL cache layer]
-  API --> FE
-  TESTS[Pytest suite] --> API
-```
-
-- API-first design with a static frontend and Flask backend.
-- Expensive routes are cache-backed (`/api/detections`, `/api/bins`, analytics helpers).
-- Current local test status: `pytest -q` -> `53 passed, 6 skipped` (includes one skipped module: live GFW health tests unless `GFW_API_HEALTH=1` + token).
+- API-first design: static frontend + Flask backend; GFW token server-side only.
+- Expensive routes cache-backed (`/api/detections`, `/api/bins`, analytics helpers).
+- Live GFW health tests optional: `GFW_API_HEALTH=1` + token.
 
 ## 1) Purpose
 
