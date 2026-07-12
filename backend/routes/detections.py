@@ -194,6 +194,8 @@ def get_detections():
         start_dt, end_dt, date_error = _validate_detection_date_window(start_date, end_date)
         if date_error:
             return jsonify({"error": date_error}), 400
+        start_date = start_dt.isoformat()
+        end_date = end_dt.isoformat()
 
         # Build tile URL
         style_id = getattr(current_app.config.get("CONFIG"), "SAR_TILE_STYLE", {}).get("id", "")
@@ -453,9 +455,11 @@ def get_proximity_clusters():
 
         if not eez_ids:
             return jsonify({"error": "Missing required parameters: eez_ids, start_date, end_date"}), 400
-        _start_dt, _end_dt, date_error = _validate_detection_date_window(start_date, end_date)
+        start_dt, end_dt, date_error = _validate_detection_date_window(start_date, end_date)
         if date_error:
             return jsonify({"error": date_error}), 400
+        start_date = start_dt.isoformat()
+        end_date = end_dt.isoformat()
 
         if max_distance_km <= 0 or max_distance_km > 50:
             return jsonify({"error": "max_distance_km must be between 0 and 50"}), 400
@@ -556,9 +560,11 @@ def get_predicted_routes():
 
         if not eez_ids:
             return jsonify({"error": "Missing required parameters: eez_ids, start_date, end_date"}), 400
-        _start_dt, _end_dt, date_error = _validate_detection_date_window(start_date, end_date)
+        start_dt, end_dt, date_error = _validate_detection_date_window(start_date, end_date)
         if date_error:
             return jsonify({"error": date_error}), 400
+        start_date = start_dt.isoformat()
+        end_date = end_dt.isoformat()
 
         if max_time_hours <= 0 or max_time_hours > 168:  # Max 1 week
             return jsonify({"error": "max_time_hours must be between 0 and 168"}), 400
@@ -638,9 +644,11 @@ def get_sar_ais_association():
 
         if not eez_ids:
             return jsonify({"error": "Missing required parameters: eez_ids, start_date, end_date"}), 400
-        _start_dt, _end_dt, date_error = _validate_detection_date_window(start_date, end_date)
+        start_dt, end_dt, date_error = _validate_detection_date_window(start_date, end_date)
         if date_error:
             return jsonify({"error": date_error}), 400
+        start_date = start_dt.isoformat()
+        end_date = end_dt.isoformat()
 
         client = current_app.config.get("GFW_CLIENT")
         if not client:
