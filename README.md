@@ -2,8 +2,8 @@
 
 Explore potential non-cooperative maritime patterns using Global Fishing Watch SAR detections, with proximity clustering and best-effort route inference.
 
-**Live demo:** `https://charlotteprevost.github.io/maritime_surveillance/`  
-**Repo:** `https://github.com/charlotteprevost/maritime_surveillance`
+**Live demo:** `https://charlotteprevost.github.io/maritime_vessel_monitor/`  
+**Repo:** `https://github.com/charlotteprevost/maritime_vessel_monitor`
 
 ## Portfolio quick view
 
