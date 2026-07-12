@@ -208,6 +208,24 @@ function formatDateYYYYMMDD(d) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function parseLocalDateInput(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts.map(Number);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  const parsed = new Date(y, m - 1, d);
+  parsed.setHours(0, 0, 0, 0);
+  if (
+    parsed.getFullYear() !== y
+    || parsed.getMonth() !== (m - 1)
+    || parsed.getDate() !== d
+  ) {
+    return null;
+  }
+  return parsed;
+}
+
 function getMaxAllowedDate() {
   // Data availability: we enforce "latest = today - 7 days" everywhere.
   const today = new Date();
@@ -219,7 +237,7 @@ function setDateInputConstraints() {
   // Input[type="date"] requires ISO yyyy-mm-dd for min/max/value.
   const min = '2017-01-01';
   const maxDate = getMaxAllowedDate();
-  const max = maxDate.toISOString().split('T')[0];
+  const max = formatDateYYYYMMDD(maxDate);
 
   const startInput = document.getElementById('start');
   const endInput = document.getElementById('end');
@@ -1556,8 +1574,8 @@ function setDefaultDates() {
 
   // end must be max allowed (today - 7 days)
   const end = getMaxAllowedDate();
-  // start must be end date minus 7 days
-  const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+  // Keep default window aligned with "7 days" preset (inclusive range).
+  const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
 
 
   // date value must conform to the required format, "yyyy-MM-dd"
@@ -1604,12 +1622,16 @@ function validateDateRangeSilent(startDate, endDate) {
     return false;
   }
 
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = parseLocalDateInput(startDate);
+  const end = parseLocalDateInput(endDate);
+  if (!start || !end) {
+    return false;
+  }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const minDate = new Date('2017-01-01');
+  const minDate = new Date(2017, 0, 1);
+  minDate.setHours(0, 0, 0, 0);
 
   // Start date cannot be before 2017-01-01
   if (start < minDate) {
@@ -1857,8 +1879,13 @@ async function applyFilters() {
   if (progressText) progressText.textContent = '0%';
 
   // Calculate total days for progress tracking
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = parseLocalDateInput(startDate);
+  const end = parseLocalDateInput(endDate);
+  if (!start || !end) {
+    if (spinnerDetail) spinnerDetail.textContent = 'Invalid date inputs. Please pick a valid range.';
+    loadingSpinner.classList.add("hidden");
+    return;
+  }
   const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
   /** Keep in sync with backend default GFW_SAR_CHUNK_DAYS (56). */
   const SAR_CHUNK_DAYS = 56;

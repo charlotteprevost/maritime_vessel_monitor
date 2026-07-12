@@ -4,7 +4,7 @@ SAR Detections Routes - Dark vessel detection via SAR imagery.
 from flask import Blueprint, request, jsonify, current_app
 import logging
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from configs.config import WINGS_API, DATASETS
 from utils.api_helpers import (
@@ -17,6 +17,34 @@ from services.dark_vessel_service import DarkVesselService
 from utils.ttl_cache import cache_enabled, make_cache_key, get_cached_response, set_cached_response, default_ttl_seconds
 
 detections_bp = Blueprint("detections", __name__)
+
+MIN_SUPPORTED_DATE = datetime(2017, 1, 1).date()
+
+
+def _validate_detection_date_window(start_date: str, end_date: str):
+    """
+    Validate API date window constraints used by the detections UI.
+    Returns (start_dt, end_dt, error_message) where dates are date objects when valid.
+    """
+    if not start_date or not end_date:
+        return None, None, "Missing required parameters"
+
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        return None, None, "Invalid date format. Use YYYY-MM-DD."
+
+    if start_dt < MIN_SUPPORTED_DATE:
+        return None, None, "start_date must be on or after 2017-01-01."
+    if start_dt > end_dt:
+        return None, None, "Invalid date window: start_date must be <= end_date."
+
+    latest_allowed = datetime.now(timezone.utc).date() - timedelta(days=7)
+    if end_dt > latest_allowed:
+        return None, None, "end_date must be at least 7 days before today."
+
+    return start_dt, end_dt, None
 
 
 
@@ -161,8 +189,11 @@ def get_detections():
         except Exception as e:
             return jsonify({"error": f"Invalid filters: {e}"}), 400
 
-        if not eez_ids or not start_date or not end_date:
+        if not eez_ids:
             return jsonify({"error": "Missing required parameters"}), 400
+        start_dt, end_dt, date_error = _validate_detection_date_window(start_date, end_date)
+        if date_error:
+            return jsonify({"error": date_error}), 400
 
         # Build tile URL
         style_id = getattr(current_app.config.get("CONFIG"), "SAR_TILE_STYLE", {}).get("id", "")
@@ -230,8 +261,8 @@ def get_detections():
         # For long ranges + multiple EEZs, skip by default or via ?include_eez_summaries=false to save N API calls.
         include_eez_summaries = request.args.get("include_eez_summaries", "true").lower() == "true"
         summaries = []
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
+        start = datetime.combine(start_dt, datetime.min.time())
+        end = datetime.combine(end_dt, datetime.min.time())
         days_diff = (end - start).days + 1
 
         if include_eez_summaries:
@@ -292,11 +323,17 @@ def get_detections():
         )
         
         # Build response with base data
+        # Pydantic v2 prefers model_dump(); keep dict() fallback for compatibility.
+        filters_payload = (
+            filters_obj.model_dump()
+            if hasattr(filters_obj, "model_dump")
+            else filters_obj.dict()
+        )
         response_data = {
             "tile_url": proxied_tile_url,  # Use proxied URL
             "summaries": summaries,
             "dark_vessels": dark_vessels,
-            "filters": filters_obj.dict(),
+            "filters": filters_payload,
             "date_range": f"{start_date},{end_date}"
         }
         
@@ -414,8 +451,11 @@ def get_proximity_clusters():
             max_interaction_cells = 35
         max_interaction_cells = max(10, min(max_interaction_cells, 500))
 
-        if not eez_ids or not start_date or not end_date:
+        if not eez_ids:
             return jsonify({"error": "Missing required parameters: eez_ids, start_date, end_date"}), 400
+        _start_dt, _end_dt, date_error = _validate_detection_date_window(start_date, end_date)
+        if date_error:
+            return jsonify({"error": date_error}), 400
 
         if max_distance_km <= 0 or max_distance_km > 50:
             return jsonify({"error": "max_distance_km must be between 0 and 50"}), 400
@@ -514,8 +554,11 @@ def get_predicted_routes():
             max_interaction_cells = 40
         max_interaction_cells = max(10, min(max_interaction_cells, 500))
 
-        if not eez_ids or not start_date or not end_date:
+        if not eez_ids:
             return jsonify({"error": "Missing required parameters: eez_ids, start_date, end_date"}), 400
+        _start_dt, _end_dt, date_error = _validate_detection_date_window(start_date, end_date)
+        if date_error:
+            return jsonify({"error": date_error}), 400
 
         if max_time_hours <= 0 or max_time_hours > 168:  # Max 1 week
             return jsonify({"error": "max_time_hours must be between 0 and 168"}), 400
@@ -593,8 +636,11 @@ def get_sar_ais_association():
         start_date = request.args.get("start_date")
         end_date = request.args.get("end_date")
 
-        if not eez_ids or not start_date or not end_date:
+        if not eez_ids:
             return jsonify({"error": "Missing required parameters: eez_ids, start_date, end_date"}), 400
+        _start_dt, _end_dt, date_error = _validate_detection_date_window(start_date, end_date)
+        if date_error:
+            return jsonify({"error": date_error}), 400
 
         client = current_app.config.get("GFW_CLIENT")
         if not client:

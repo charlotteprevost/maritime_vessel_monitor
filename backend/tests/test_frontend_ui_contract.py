@@ -202,3 +202,17 @@ def test_docs_is_synced_from_frontend_static_bundle():
         docs = _read(repo_root, f"docs/{rel}")
         assert fe == docs, f"docs/{rel} is out of sync with frontend/{rel}. Run ./scripts/sync_docs.sh"
 
+
+def test_date_validation_uses_local_midnight_not_utc_parsing():
+    """
+    Date input contract: avoid timezone drift from `new Date("YYYY-MM-DD")` (UTC parse).
+    The UI should parse date-input values as local-midnight calendar dates.
+    """
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    fe_js = _read(repo_root, "frontend/main.js")
+
+    assert "function parseLocalDateInput" in fe_js
+    assert "const max = formatDateYYYYMMDD(maxDate);" in fe_js
+    assert "const start = parseLocalDateInput(startDate);" in fe_js
+    assert "const end = parseLocalDateInput(endDate);" in fe_js
+

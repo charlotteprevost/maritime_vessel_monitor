@@ -46,6 +46,22 @@ def test_missing_end_date(client):
     assert res.status_code == 400
 
 
+def test_start_date_after_end_date_is_rejected(client):
+    res = client.get(
+        "/api/detections?eez_ids=France&start_date=2025-04-05&end_date=2025-04-01"
+    )
+    assert res.status_code == 400
+    assert "start_date must be <= end_date" in res.json.get("error", "")
+
+
+def test_invalid_date_format_is_rejected(client):
+    res = client.get(
+        "/api/detections?eez_ids=France&start_date=2025/04/01&end_date=2025-04-05"
+    )
+    assert res.status_code == 400
+    assert "Invalid date format" in res.json.get("error", "")
+
+
 def test_invalid_eez_ids(client):
     """
     Supplying an unknown EEZ identifier should still return a response. The status code
