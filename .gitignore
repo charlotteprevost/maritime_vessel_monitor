@@ -17,9 +17,15 @@ ENV/
 # IDE
 .vscode/
 .idea/
+.cursor/
+.cursorignore
 *.swp
 *.swo
 *~
+
+# AI assistant local artifacts
+agent_digest/
+agent-transcripts/
 
 # OS
 .DS_Store
