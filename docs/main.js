@@ -363,6 +363,19 @@ async function init() {
       }
     });
 
+    // Recruiter / Pages: load a known-good EEZ + 30-day window so the map is not empty.
+    // Opt out with ?demo=0. Force with ?demo=1 (also used from the portfolio live-demo link).
+    const demoParam = new URLSearchParams(window.location.search).get('demo');
+    const autoDemo = demoParam === '1'
+      || (demoParam !== '0' && window.location.hostname.endsWith('github.io'));
+    if (autoDemo) {
+      try {
+        await runDeterministicDemo({ startTour: false });
+      } catch (e) {
+        console.error('Auto demo failed:', e);
+      }
+    }
+
     // Onboarding is started explicitly via "Start tutorial" (see tutorial-start handler).
 
   } catch (error) {
@@ -804,7 +817,7 @@ function setLegendToggleState(id, checked) {
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-async function runDeterministicDemo() {
+async function runDeterministicDemo({ startTour = true } = {}) {
   // Ensure users see exactly what the preset changed.
   setPanelOpen('filters', true);
 
@@ -852,9 +865,11 @@ async function runDeterministicDemo() {
 
   await applyFilters();
 
-  setTimeout(() => {
-    try { startDemoTour(); } catch { /* ignore */ }
-  }, 300);
+  if (startTour) {
+    setTimeout(() => {
+      try { startDemoTour(); } catch { /* ignore */ }
+    }, 300);
+  }
 }
 
 function initMap() {
